@@ -1,0 +1,23 @@
+# Personal data — do NOT commit
+*.pdf
+*Zone.Identifier
+*.PDF
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+
+# Editors / OS
+.DS_Store
+.vscode/
+.idea/
+
+# Claude Code session metadata
+.claude/
+
+# Streamlit / runtime
+.streamlit/secrets.toml
+*.log
