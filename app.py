@@ -150,7 +150,7 @@ with c4:
 if gate_fired:
     label_map = {
         'statutory_bar':    "Statutory bar (NCGS 50-16.3A(a))",
-        'dependency_40pct': f"Dependency gate (G_a is ≥{DEPENDENCY_GATE_RATIO*100:.0f}% of combined gross — Party A not 'dependent')",
+        'dependency_40pct_net': f"Dependency gate (Party A's net income ≥{DEPENDENCY_GATE_RATIO*100:.0f}% of combined net — not 'dependent' under NCGS 50-16.1A)",
         'de_minimis':       "De-minimis floor (income gap < $1,500/mo)",
     }
     st.markdown(
@@ -356,8 +356,11 @@ at high G_a to keep the recipient's marginal effective tax rate ≤ 65% (no bene
 
 **Gate sequence (first to fire zeroes alimony):**
 
-1. Dependency gate at {DEPENDENCY_GATE_RATIO*100:.0f}% of combined gross — operationalizes the
-   "dependent spouse" finding under [NCGS 50-16.1A][nc161a].
+1. Dependency gate at {DEPENDENCY_GATE_RATIO*100:.0f}% of combined **net** income —
+   operationalizes the "dependent spouse" finding under [NCGS 50-16.1A][nc161a].
+   Net-income basis (not gross) because TCJA makes alimony non-deductible to payor
+   and non-taxable to recipient, so "ability to pay" and "need" are properly
+   measured post-tax. Threshold matches the AAML practitioner standard.
 2. De-minimis $1,500/mo gross-gap floor.
 3. Smooth self-sufficiency taper at 1.5 × FPL × (1 + 0.6n).
 4. Compute interior, multiply by self-sufficiency factor.

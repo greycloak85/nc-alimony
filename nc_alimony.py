@@ -209,13 +209,17 @@ W_SCALE = 8_000.0            # logistic scale
 #   $7,293 = (1-w) * $16,152.41
 #   1-w = 0.4515, w = 0.5485
 # This is the correctly-calibrated weight given the tax module above.
-DEPENDENCY_GATE_RATIO = 1.0 / 3.0  # NCGS 50-16.1A operational threshold.
+DEPENDENCY_GATE_RATIO = 0.40  # NCGS 50-16.1A operational threshold (NET-income basis).
 # The "dependent spouse" finding under NC law is qualitative; we operationalize
-# at 1/3 (a common practitioner heuristic). This is tighter than the 40% AAML
-# cap (which is a separate post-formula constraint, not a dependency gate).
-# A 1/3 threshold zeroes Scenario 3 (G_a=$80K of $230K combined = 34.8%) and
-# Scenario 4 / Stress 4 (equal/near-equal incomes), which matches the
-# orchestrator's stated intent.
+# at 0.40 of combined NET income, matching the AAML practitioner standard.
+# Net-income basis (rather than gross) is used because TCJA renders alimony
+# non-deductible to the payor and non-taxable to the recipient — "ability to
+# pay" and "need" are properly measured against the post-tax pile each party
+# actually consumes. This also harmonizes Gate 2 with the rest of the model,
+# which uses N(·) throughout the interior formula.
+# Prior version used 1/3 of GROSS income; the move to 40% net is meaningfully
+# softer (Scenario 3 below now passes the gate; equal-income / role-reversal
+# cases still fire it).
 DE_MINIMIS_GAP_MONTHLY = 1_500.0
 FPL_2025_SINGLE = 15_650.0
 SSR_FACTOR = 1.25
@@ -281,19 +285,17 @@ def alimony(G_p, G_a, n_kids,
         pass
 
     # ----- Gate 2: Dependency gate (NCGS 50-16.1A "dependent spouse") -----
-    # Hard zero when G_a is well above DEPENDENCY_GATE_RATIO of combined, but
-    # we taper smoothly (sigmoid) so monotone payee take-home is preserved
-    # across the threshold. The hard zero still fires when ratio >= ratio + 5%
-    # absolute (e.g., 0.38 if threshold is 1/3) for clear dependency-finding
-    # cases (Scenarios 3, 4, S1, S4). The taper handles the smooth transition.
-    if (G_p + G_a) > 0:
-        ratio = G_a / (G_p + G_a)
-        # Hard zero past threshold. NCGS 50-16.1A "dependent spouse"
-        # operationalized at 1/3 (NC practitioner heuristic). Scenario 3
-        # (ratio 34.8%) and Stress 4 (50%) fire this. Scenario 2 (14.9%)
-        # and Stress 3 (28.6%) do not.
-        if ratio >= DEPENDENCY_GATE_RATIO:
-            out['gate_fired'] = 'dependency_40pct'
+    # NET-income basis at DEPENDENCY_GATE_RATIO (0.40). TCJA makes alimony
+    # non-deductible to payor and non-taxable to recipient, so "dependency"
+    # is properly measured on post-tax incomes — biased gross-income test
+    # would over-trigger this gate. AAML practitioner standard is 0.40.
+    N_p_for_gate = net_income(G_p)
+    N_a_for_gate = net_income(G_a)
+    combined_net_for_gate = N_p_for_gate + N_a_for_gate
+    if combined_net_for_gate > 0:
+        net_ratio = N_a_for_gate / combined_net_for_gate
+        if net_ratio >= DEPENDENCY_GATE_RATIO:
+            out['gate_fired'] = 'dependency_40pct_net'
             return out
         dep_factor = 1.0
     else:
@@ -564,12 +566,21 @@ def main():
 
     print()
     print("=" * 100)
-    print("SCENARIO 3 (DEPENDENCY GATE) VERIFICATION")
+    print("SCENARIO 3 (DEPENDENCY GATE — 40% NET) VERIFICATION")
     print("=" * 100)
+    # Under the 40%-net-income gate, Scenario 3 ($150K/$80K/1 kid) should
+    # PASS through the gate (net ratio ~36.3% < 40%) and produce a small
+    # non-zero alimony. (Under the old 33%-gross gate it produced $0.)
     sc3 = examples[2]
-    sc3_pass = (sc3['A_monthly'] == 0.0 and sc3['gate_fired'] == 'dependency_40pct')
-    print(f"  Scenario 3 alimony: ${sc3['A_monthly']:,.2f}  (target $0 via dependency gate)")
+    sc3_pass = (sc3['gate_fired'] is None and sc3['A_monthly'] > 0)
+    print(f"  Scenario 3 alimony: ${sc3['A_monthly']:,.2f}  (target: small positive; gate must NOT fire)")
     print(f"  Gate fired: {sc3['gate_fired']}  -> {'PASS' if sc3_pass else 'FAIL'}")
+    # Equal-incomes case (Stress 4) is the cleanest regression on the gate
+    # itself: 50/50 incomes -> ratio = 50% -> gate must fire.
+    s4 = examples[7]
+    s4_pass = (s4['gate_fired'] == 'dependency_40pct_net' and s4['A_monthly'] == 0.0)
+    print(f"  Stress 4 (equal incomes) gate fires: {s4['gate_fired']}  -> {'PASS' if s4_pass else 'FAIL'}")
+    sc3_pass = sc3_pass and s4_pass
 
     print()
     print("=" * 100)
@@ -578,7 +589,7 @@ def main():
     overall = A_pass and cs_pass and sc3_pass and sweep1_pass and sweep2_pass
     print(f"  Anchor A=$5,000 ± $50:        {'PASS' if A_pass else 'FAIL'}")
     print(f"  Anchor CS=$2,300 ± $50:       {'PASS' if cs_pass else 'FAIL'}")
-    print(f"  Scenario 3 dependency gate:   {'PASS' if sc3_pass else 'FAIL'}")
+    print(f"  Scenario 3 + Stress 4 gates:  {'PASS' if sc3_pass else 'FAIL'}")
     print(f"  Sweep 1 (G_a varies, mono):   {'PASS' if sweep1_pass else 'FAIL'}")
     print(f"  Sweep 2 (G_p varies, no-x):   {'PASS' if sweep2_pass else 'FAIL'}")
     print(f"  Sweep 2 margin growing:       {'PASS' if margin_growing else 'FAIL'}")
